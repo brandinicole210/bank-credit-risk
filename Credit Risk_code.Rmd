@@ -1,0 +1,593 @@
+---
+title: "Final Project"
+author: "Brandi Rodriguez"
+date: "May 9, 2021"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#LOAD LIBRARIES
+```{r message=FALSE, warning=FALSE}
+library(RSADBE) #dataset source
+library(dplyr)
+library(tidyr) # data wrangling
+library(ggplot2) # plotting
+library(survival) # survival
+library(rpart) # DT
+library(randomForest) #RF
+library(randomForestSRC) # RF
+```
+
+#LOAD DATA
+https://cran.r-project.org/web/packages/RSADBE/RSADBE.pdf
+```{r}
+library(RSADBE)
+data(GC)
+str(GC)
+```
+
+```{r}
+summary(GC)
+```
+
+#DATA PREPROCESSING
+```{r}
+#create copy of dataset
+df = GC 
+
+#rename variables and recode response variable
+df = df %>% 
+  rename(response = good_bad,
+         dependents = depends, 
+         telephone = telephon) %>%
+  mutate(response = recode(response, "bad" = 1, "good" = 0))
+
+#convert factor variables
+factors = c("checking", "history", "savings", "employed", "marital", "coapp", "other", "housing", "job", "telephone", "foreign", "response")
+df[factors] = lapply(df[factors], factor)
+  
+#view data  
+str(df)
+```
+
+```{r}
+summary(GC)
+```
+
+#MISSING VALUES
+This was a complete dataset with no missing values
+```{r}
+colSums(is.na(df))
+```
+
+#CORRELATIONS
+```{r message=FALSE, warning=FALSE}
+library(corrplot)
+corrplot(cor(df[sapply(df, is.numeric)]), method = "number", type = "upper", tl.cex = .80, number.cex = .70)
+```
+
+#EDA
+```{r message=FALSE, warning=FALSE}
+library(DataExplorer)
+library(ggplot2)
+```
+
+```{r message=FALSE, warning=FALSE}
+plot_histogram(df, title = "Distributions of Numeric Variables")
+```
+
+```{r message=FALSE, warning=FALSE}
+plot_qq(df, title="QQ Plots")
+```
+: 
+```{r message=FALSE, warning=FALSE}
+plot_qq(df, by = "response",
+        title = "QQ Plots by 'Response'")
+```
+
+```{r message=FALSE, warning=FALSE}
+plot_boxplot(df, by = "response", title = "Boxplots of Continuous Variables by Response")
+```
+
+```{r message=FALSE, warning=FALSE}
+plot_bar(df)
+```
+
+```{r message=FALSE, warning=FALSE}
+plot_bar(df, by = "response")
+```
+
+#RENAME FACTOR LEVELS
+http://www1.beuth-hochschule.de/FB_II/reports/Report-2019-004.pdf
+
+```{r}
+prop.table(table(df$dependents, df$response), margin=2)*100
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+levels(df$housing) = c("free", "rent", "own")
+levels(df$checking) = c("no checking account", "<0", "<200","200+/salary for atleast 1 year")
+levels(df$history) = c("delayed previously", "critical/other existing credit", "no credits taken/all paid", "existing paid", "all paid")
+levels(df$purpose) = c("others", "car (new)", "car (used)", "furniture/equipment", "radio/tv", "appliance", "repairs", "vacation", "retraining", "business")
+levels(df$savings) = c("unknown/none", "<100", "<500", "<1000", "1000+")
+levels(df$employed) = c("unemployed", "<1", "<4", "<7", "7+")
+levels(df$marital) = c("male: divorced/separated", "female: non-single or male: single", "male: married/widowed", "female: single")
+levels(df$coapp) = c("none", "co-applicant", "guarantor")
+levels(df$property) = c("unknown/no property", "car or other", "building soc. savings agr./life ins.", "real estate")
+levels(df$other) = c("bank", "stores", "none")
+levels(df$job) = c("unemployed/unskilled - non-resident", "unskilled - resident", "skilled employee/official", "manager/self-empl/highly qualif employee")
+levels(df$telephone) = c("no", "yes")
+levels(df$foreign) = c("no", "yes")
+levels(df$dependents) = c("0 to 2", "3+")
+```
+
+```{r}
+#validate distribution tables match as defined in http://www1.beuth-hochschule.de/FB_II/reports/Report-2019-004.pdf
+
+prop.table(table(df$housing, df$response), margin=2)*100
+```
+
+```{r message=FALSE, warning=FALSE}
+plot_bar(df)
+```
+```{r}
+str(df)
+```
+
+```{r message=FALSE, warning=FALSE}
+plot_bar(df, by = "response", ncol = 2)
+```
+
+```{r}
+attach(df)
+par(mfrow = c(2,2))
+plot(sort(checking, decreasing = T))
+plot(history)
+plot(purpose)
+plot(savings)
+```
+
+```{r}
+library(forcats)
+par(mfrow = c(2,2))
+ggplot(mutate(df, checking =fct_infreq(checking))) + geom_bar(aes(x = checking)) 
+
+ggplot(mutate(df, history =fct_infreq(history))) + geom_bar(aes(x = history)) + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(mutate(df, purpose =fct_infreq(purpose))) + geom_bar(aes(x = purpose)) + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(mutate(df, savings =fct_infreq(savings))) + geom_bar(aes(x = savings))
+
+plot(employed)
+plot(marital)
+plot(coapp)
+plot(property)
+plot(other)
+```
+
+```{r}
+plot_bar(df, ncol = 2)
+```
+
+```{r message=FALSE, warning=FALSE}
+plot_bar(df, by = "response", ncol = 2)
+```
+
+```{r}
+ggplot(df) + geom_bar(aes(x = checking))
+```
+
+```{r}
+library(forcats)
+ggplot(mutate(df, checking = fct_infreq(checking))) + 
+  geom_bar(aes(x = checking)) + 
+  facet_wrap(~response) + 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+```
+
+```{r}
+library(forcats)
+ggplot(mutate(df, history = fct_infreq(history))) + 
+  geom_bar(aes(x = history, fill = response)) + 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + 
+  coord_flip()+
+  ggtitle("HISTORY")
+```
+
+```{r}
+library(forcats)
+ggplot(mutate(df, checking = fct_infreq(checking))) + 
+  geom_bar(aes(x = checking, fill = response)) + 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + 
+  coord_flip()+
+  ggtitle("CHECKING")
+```
+
+```{r}
+library(forcats)
+ggplot(mutate(df, savings = fct_infreq(savings))) + 
+  geom_bar(aes(x = savings, fill = response)) + 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + 
+  coord_flip()+
+  ggtitle("SAVINGS")
+```
+
+```{r}
+library(forcats)
+ggplot(mutate(df, employed = fct_infreq(employed))) + 
+  geom_bar(aes(x = employed, fill = response)) + 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + 
+  coord_flip()+
+  ggtitle("YEARS EMPLOYED")
+```
+
+#SPLIT TEST AND TRAIN DATASET
+```{r message=FALSE, warning=FALSE}
+library(caret)
+set.seed(2021)
+index = createDataPartition(df$response, p=0.8, list = FALSE)
+train = df[index,]
+test = df[-index,]
+```
+
+#PREDICTING RESPONSE
+
+#LOGIT1
+```{r}
+set.seed(2021)
+logit1 = glm(response ~ ., data = train, family = binomial)
+summary(logit1)
+```
+
+```{r message=FALSE, warning=FALSE}
+#which predictors are significant and calculate model fit statistics
+significant_if = summary(logit1)$coeff[-1,4]<.05
+logit1.significant = names(significant_if)[significant_if==TRUE]
+
+logit1.significant
+AIC = AIC(logit1)
+BIC = BIC(logit1)
+cbind(AIC, BIC)
+
+#make predictions
+library(caret)
+test$PredProb.logit1 = predict.glm(logit1, newdata=test, type = 'response')
+test$Pred.logit1 = ifelse(test$PredProb.logit1 >= .5,1,0)
+caret::confusionMatrix(as.factor(test$Pred.logit1), as.factor(test$response))
+
+#calculate auc
+library(ROCR)
+library(pROC)
+library(car)
+pred1 = prediction(predict(logit1, test, type = "response"), test$response)
+auc1 = round(as.numeric(performance(pred1, measure = "auc")@y.values), 3)
+auc1
+```
+
+```{r}
+library(car)
+vif(logit1)
+```
+
+
+#LOGIT2
+```{r}
+set.seed(2021)
+logit2 = glm(response ~ checking + duration + history + purpose + amount + savings + installp + marital + coapp + other + housing, data=train, family = binomial)
+summary(logit2)
+```
+
+```{r message=FALSE, warning=FALSE}
+#which predictors are significant and calculate model fit statistics
+significant_if = summary(logit2)$coeff[-1,4]<.05
+logit2.significant = names(significant_if)[significant_if==TRUE]
+
+logit2.significant
+AIC = AIC(logit2)
+BIC = BIC(logit2)
+cbind(AIC, BIC)
+
+#make predictions
+library(caret)
+test$PredProb.logit2 = predict.glm(logit2, newdata=test, type = 'response')
+test$Pred.logit2 = ifelse(test$PredProb.logit2 >= .5,1,0)
+caret::confusionMatrix(as.factor(test$Pred.logit2), as.factor(test$response))
+
+#calculate auc
+library(ROCR)
+library(pROC)
+library(car)
+pred2 = prediction(predict(logit2, test, type = "response"), test$response)
+auc2 = round(as.numeric(performance(pred2, measure = "auc")@y.values), 3)
+auc2
+```
+
+```{r}
+vif(logit2)
+```
+
+#LOGIT3
+```{r}
+set.seed(2021)
+logit3 = glm(response ~ checking + duration + history + purpose + amount + savings + installp + marital + coapp + other, data=train, family = binomial)
+summary(logit3)
+```
+
+```{r message=FALSE, warning=FALSE}
+#which predictors are significant and calculate model fit statistics
+significant_if = summary(logit3)$coeff[-1,4]<.05
+logit3.significant = names(significant_if)[significant_if==TRUE]
+
+logit3.significant
+AIC = AIC(logit3)
+BIC = BIC(logit3)
+cbind(AIC, BIC)
+
+#make predictions
+library(caret)
+test$PredProb.logit3 = predict.glm(logit3, newdata=test, type = 'response')
+test$Pred.logit3 = ifelse(test$PredProb.logit3 >= .5,1,0)
+caret::confusionMatrix(as.factor(test$Pred.logit3), as.factor(test$response))
+
+#calculate auc
+library(ROCR)
+library(pROC)
+library(car)
+pred3 = prediction(predict(logit3, test, type = "response"), test$response)
+auc3 = round(as.numeric(performance(pred3, measure = "auc")@y.values), 3)
+auc3
+```
+
+```{r}
+library(car)
+vif(logit3)
+```
+
+```{r}
+odds_ratio = exp(logit3$coefficients)
+round(odds_ratio, 3)
+```
+
+#DT1
+```{r message=FALSE, warning=FALSE}
+library(tree)
+set.seed(2021)
+DT1 = tree(response ~ . , train)
+summary(DT1)
+```
+
+```{r}
+plot(DT1)
+text(DT1, pretty = 0, cex = 0.7)
+```
+
+```{r}
+test$DT1.pred = predict(DT1, test, type = 'class')
+caret::confusionMatrix(test$DT1.pred, test$response)
+```
+
+#DT1_PRUNED
+```{r}
+#perform cost complexity pruning by cross-validation (CV) using misclassification rate
+set.seed(2021)
+cv.DT1 = cv.tree(DT1, FUN=prune.misclass)
+```
+
+```{r}
+names(cv.DT1)
+```
+
+Plot the estimated test error rate
+```{r}
+par(mfrow = c(1,2))
+plot(cv.DT1$size, cv.DT1$dev, type = 'b')
+plot(cv.DT1$k, cv.DT1$dev, type = 'b')
+```
+
+Get the best size
+```{r}
+cv.DT1$size[which.min(cv.DT1$dev)]
+```
+
+Get the pruned tree of the best size
+```{r}
+set.seed(2021)
+DT1_pruned = prune.misclass(DT1, best = 7)
+summary(DT1_pruned)
+```
+
+Plot the pruned tree with 6 leaves
+```{r}
+plot(DT1_pruned)
+text(DT1_pruned, pretty=0)
+```
+
+Get predictions and Confusion Matrix on the test set
+```{r}
+test$DT1_pruned.pred = predict(DT1_pruned, test, type = 'class')
+caret::confusionMatrix(test$DT1_pruned.pred, test$response)
+```
+
+#RF1
+```{r}
+set.seed(2021)
+RF1 <- randomForest(response ~ .,
+                                  data = train,
+                                  importance = TRUE)
+```
+
+```{r}
+#make predictions
+test$Pred.RF1 = predict(RF1, test)
+caret::confusionMatrix(as.factor(test$Pred.RF1), as.factor(test$response))
+```
+
+```{r}
+#get the variable importance measure for each predictor
+importance(RF1)
+```
+
+```{r}
+varImpPlot(RF1)
+```
+
+#Partial Dependence Plots
+
+```{r}
+#Method A
+par(mfrow=c(2,2))
+partialPlot(RF1, pred.data = train, x.var = "checking") 
+partialPlot(RF1, pred.data = train, x.var = "duration") 
+partialPlot(RF1, pred.data = train, x.var = "history") 
+partialPlot(RF1, pred.data = train, x.var = "amount") 
+```
+
+```{r message=FALSE, warning=FALSE}
+#Method B
+library(pdp)
+library(ggplot2)
+par.checking = partial(RF1, pred.var = c("checking"), chull=TRUE)
+plot.checking = autoplot(par.checking, contour = T)
+
+par.duration = partial(RF1, pred.var = c("duration"), chull=TRUE)
+plot.duration = autoplot(par.duration, contour = T) 
+
+par.history = partial(RF1, pred.var = c("history"), chull=TRUE)
+plot.history = autoplot(par.history, contour = T) 
+
+par.amount = partial(RF1, pred.var = c("amount"), chull=TRUE)
+plot.amount = autoplot(par.amount, contour = T) 
+
+grid.arrange(plot.checking, plot.duration, plot.history, plot.amount)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+#Method B
+library(pdp)
+library(ggplot2)
+par.checking = partial(RF1, pred.var = c("checking"), chull=TRUE)
+plot.checking = autoplot(par.checking, contour = T) +
+  theme(axis.text.x = element_text(angle = 60, hjust =1))
+
+par.duration = partial(RF1, pred.var = c("duration"), chull=TRUE)
+plot.duration = autoplot(par.duration, contour = T) +
+  theme(axis.text.x = element_text(angle = 60, hjust =1))
+
+par.history = partial(RF1, pred.var = c("history"), chull=TRUE)
+plot.history = autoplot(par.history, contour = T) +
+  theme(axis.text.x = element_text(angle = 60, hjust =1))
+
+par.amount = partial(RF1, pred.var = c("amount"), chull=TRUE)
+plot.amount = autoplot(par.amount, contour = T) +
+  theme(axis.text.x = element_text(angle = 60, hjust =1))
+
+grid.arrange(plot.checking, plot.duration, plot.history, plot.amount)
+```
+
+
+
+#RF2
+```{r}
+set.seed(2021)
+RF2 <- randomForest(response ~ checking + 
+                                  duration + 
+                                  history +
+                                  amount + 
+                                  savings + 
+                                  coapp + 
+                                  purpose + 
+                                  other + 
+                                  property + 
+                                  installp,
+                                  data = train, 
+                                  importance = TRUE)
+```
+
+```{r}
+#make predictions
+test$Pred.RF2 = predict(RF2, test)
+caret::confusionMatrix(as.factor(test$Pred.RF2), as.factor(test$response))
+```
+
+```{r}
+#get the variable importance measure for each predictor
+importance(RF2)
+```
+
+```{r}
+varImpPlot(RF2)
+```
+
+#RF_TUNED
+##Hyperparameter Tuning
+```{r}
+set.seed(2021)
+#Create a list of possible values for hyperparameters
+mtry.values = seq(2,10,2)
+nodesize.values = seq(3,15,3)
+ntree.values = seq(2e3, 5e3, 1e3)
+
+#Build a list of possible values for hyperparameters
+hyper_grid = expand.grid(mtry = mtry.values, nodesize = nodesize.values, ntree = ntree.values)
+
+#Create an empty vector to store OOB error values
+oob_err = c()
+
+#Write a for loop over the rows of hyper_grid to train the grid of models
+for (i in 1:nrow(hyper_grid)) {
+    model <- randomForest(response ~ ., data = train, importance = T,
+                                        mtry = hyper_grid$mtry[i],
+                                        nodesize = hyper_grid$nodesize[i],
+                                        ntree = hyper_grid$ntree[i])
+    
+    oob_err[i] <- model$err.rate[length(model$err.rate)] # Store OOB error for the model
+}
+```
+
+```{r}
+#Identify optimal set of hyperparameters based on OOB error
+optimal = which.min(oob_err)
+print(hyper_grid[optimal, ])
+```
+
+Tuned hyperparameters:
+mytr = 10
+nodesize = 6
+ntree = 3000
+
+Train model with best parameters
+```{r}
+set.seed(2021)
+RF1_Tuned = randomForest(response ~ ., 
+                  mtry = 10,
+                  nodesize = 6,
+                  ntree = 3000,
+                  data = train,
+                  importance=TRUE)
+RF1_Tuned
+```
+
+
+```{r}
+#make predictions
+test$Pred.RF1_Tuned = predict(RF1_Tuned, test)
+caret::confusionMatrix(as.factor(test$Pred.RF1_Tuned), test$response)
+```
+
+```{r}
+#get the variable importance measure for each predictor
+importance(RF1_Tuned)
+```
+
+```{r}
+varImpPlot(RF1_Tuned)
+```
+
+
+
